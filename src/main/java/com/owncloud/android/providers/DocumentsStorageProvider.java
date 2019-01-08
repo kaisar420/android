@@ -79,7 +79,7 @@ public class DocumentsStorageProvider extends DocumentsProvider {
     private OwnCloudClient client;
 
     @Override
-    public Cursor queryRoots(String[] projection) throws FileNotFoundException {
+    public Cursor queryRoots(String[] projection) {
 
         SharedPreferences appPrefs = PreferenceManager.getDefaultSharedPreferences(MainApp.getAppContext());
         if (appPrefs.getString(Preferences.PREFERENCE_LOCK, "").equals(Preferences.LOCK_PASSCODE) ||
@@ -144,16 +144,24 @@ public class DocumentsStorageProvider extends DocumentsProvider {
         final long docId = Long.parseLong(documentId);
         updateCurrentStorageManagerIfNeeded(docId);
 
-        OCFile file = currentStorageManager.getFileById(docId);
+        OCFile ocFile = currentStorageManager.getFileById(docId);
+
+        if (ocFile == null) {
+            throw new FileNotFoundException("File not found: " + documentId);
+        }
 
         Account account = currentStorageManager.getAccount();
         Context context = getContext();
 
-        if (!file.isDown()) {
+        if (context == null) {
+            throw new FileNotFoundException("File cannot be loaded without proper context");
+        }
+
+        if (!ocFile.isDown()) {
 
             Intent i = new Intent(getContext(), FileDownloader.class);
             i.putExtra(FileDownloader.EXTRA_ACCOUNT, account);
-            i.putExtra(FileDownloader.EXTRA_FILE, file);
+            i.putExtra(FileDownloader.EXTRA_FILE, ocFile);
             if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
                 context.startForegroundService(i);
             } else {
@@ -164,11 +172,11 @@ public class DocumentsStorageProvider extends DocumentsProvider {
                 if (!waitOrGetCancelled(cancellationSignal)) {
                     return null;
                 }
-                file = currentStorageManager.getFileById(docId);
+                ocFile = currentStorageManager.getFileById(docId);
 
-            } while (!file.isDown());
+            } while (!ocFile.isDown());
         } else {
-            OCFile finalFile = file;
+            OCFile finalFile = ocFile;
             Thread syncThread = new Thread(() -> {
                 try {
                     FileDataStorageManager storageManager =
@@ -203,7 +211,33 @@ public class DocumentsStorageProvider extends DocumentsProvider {
             }
         }
 
-        return ParcelFileDescriptor.open(new File(file.getStoragePath()), ParcelFileDescriptor.parseMode(mode));
+        File file = new File(ocFile.getStoragePath());
+        int accessMode = ParcelFileDescriptor.parseMode(mode);
+        boolean isWrite = (mode.indexOf('w') != -1);
+
+        final OCFile oldFile = ocFile;
+        final OCFile newFile = ocFile;
+
+        if (isWrite) {
+            try {
+                Handler handler = new Handler(context.getMainLooper());
+                return ParcelFileDescriptor.open(file, accessMode, handler, l -> {
+                    RemoteOperationResult result = new SynchronizeFileOperation(newFile, oldFile, account, true,
+                                                                                context)
+                        .execute(client, currentStorageManager);
+
+                    boolean success = result.isSuccess();
+
+                    if (!success) {
+                        Log_OC.e(TAG, "Failed to update document with id" + documentId);
+                    }
+                });
+            } catch (IOException e) {
+                throw new FileNotFoundException("Failed to open/edit document with id" + documentId);
+            }
+        } else {
+            return ParcelFileDescriptor.open(file, accessMode);
+        }
     }
 
     private void showToast() {
