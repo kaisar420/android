@@ -79,7 +79,7 @@ public class DocumentsStorageProvider extends DocumentsProvider {
     private OwnCloudClient client;
 
     @Override
-    public Cursor queryRoots(String[] projection) {
+    public Cursor queryRoots(String[] projection) throws FileNotFoundException {
 
         SharedPreferences appPrefs = PreferenceManager.getDefaultSharedPreferences(MainApp.getAppContext());
         if (appPrefs.getString(Preferences.PREFERENCE_LOCK, "").equals(Preferences.LOCK_PASSCODE) ||
