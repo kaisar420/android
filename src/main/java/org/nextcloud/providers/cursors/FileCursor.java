@@ -49,7 +49,11 @@ public class FileCursor extends MatrixCursor {
         final int iconRes = MimeTypeUtil.getFileTypeIconId(file.getMimeType(), file.getFileName());
         final String mimeType = file.isFolder() ? Document.MIME_TYPE_DIR : file.getMimeType();
         final String imagePath = MimeTypeUtil.isImage(file) && file.isDown() ? file.getStoragePath() : null;
-        int flags = imagePath != null ? Document.FLAG_SUPPORTS_THUMBNAIL : 0;
+        int flags = (imagePath != null ? Document.FLAG_SUPPORTS_THUMBNAIL : 0);
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            flags = Document.FLAG_SUPPORTS_RENAME | flags;
+        }
 
         newRow().add(Document.COLUMN_DOCUMENT_ID, Long.toString(file.getFileId()))
                 .add(Document.COLUMN_DISPLAY_NAME, file.getFileName())
